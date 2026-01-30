@@ -29,11 +29,9 @@ jobs:
           git commit -m "chore: update batch ledgers [skip ci]" || echo "No changes to commit"
           git push
 
-      # Placeholder for Slack Notification
-      # You would typically use a custom action or curl request here
-      # - name: Notify Slack
-      #   if: success()
-      #   env:
-      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      #   run: |
-      #     curl -X POST -H 'Content-type: application/json' --data '{"text":"New images ingested and ledgers updated!"}' $SLACK_WEBHOOK_URL
+      - name: Notify Slack
+        if: success() && secrets.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: node scripts/notify-slack-ingestion.js

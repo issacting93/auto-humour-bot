@@ -13,22 +13,25 @@ const REPO_OWNER = process.env.REPO_OWNER; // e.g. 'zac'
 const REPO_NAME = process.env.REPO_NAME;   // e.g. 'Auto-Humour-Bot'
 
 async function getBatchLedger(batchId) {
-    try {
-        console.log(`[meme] Fetching ledger from ${REPO_OWNER}/${REPO_NAME} batches/${batchId}.json`);
-        const { data } = await octokit.rest.repos.getContent({
-            owner: REPO_OWNER,
-            repo: REPO_NAME,
-            path: `batches/${batchId}.json`,
-            ref: 'main',
-        });
+    const path = `batches/${batchId}.json`;
+    for (const ref of ['main', undefined, 'master']) {
+        try {
+            console.log(`[meme] Fetching ledger from ${REPO_OWNER}/${REPO_NAME} ${path}${ref ? ` (ref: ${ref})` : ' (default branch)'}`);
+            const params = { owner: REPO_OWNER, repo: REPO_NAME, path };
+            if (ref) params.ref = ref;
+            const { data } = await octokit.rest.repos.getContent(params);
 
-        // GitHub API returns content in base64
-        const content = Buffer.from(data.content, 'base64').toString('utf-8');
-        return { data: JSON.parse(content), sha: data.sha };
-    } catch (error) {
-        console.error(`[meme] Error fetching ledger for ${batchId} from ${REPO_OWNER}/${REPO_NAME}:`, error.message, error.status);
-        return null;
+            // GitHub API returns content in base64
+            const content = Buffer.from(data.content, 'base64').toString('utf-8');
+            return { data: JSON.parse(content), sha: data.sha };
+        } catch (error) {
+            if (error.status === 404) continue;
+            console.error(`[meme] Error fetching ledger for ${batchId} from ${REPO_OWNER}/${REPO_NAME}:`, error.message, error.status);
+            return null;
+        }
     }
+    console.error(`[meme] Ledger ${batchId} not found on main, default branch, or master`);
+    return null;
 }
 
 // Command: /meme status <batch_id>
@@ -61,7 +64,12 @@ app.command('/meme', async ({ command, ack, say, respond }) => {
         const used = ledger.items.filter(i => i.status === 'used').length;
         const remaining = total - used;
 
-        await reply(`📊 *Batch Status: ${batchId}*\nTotal: ${total} | Used: ${used} | Remaining: ${remaining}`);
+        const baseUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/main`;
+        const imageLines = ledger.items
+            .map(i => `• <${baseUrl}/${i.file_path}|${i.image_id}> (${i.status})`)
+            .join('\n');
+
+        await reply(`📊 *Batch Status: ${batchId}*\nTotal: ${total} | Used: ${used} | Remaining: ${remaining}\n\n*Images:*\n${imageLines || '_none_'}`);
 
         if (remaining === 0) {
             await reply("⚠️ This batch is empty!");

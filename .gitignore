@@ -19,3 +19,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# CI (written by update-ledger.js for Slack notification)
+.ingestion-summary.json

@@ -40,6 +40,7 @@ function updateLedger(batchId) {
   });
 
   let newCount = 0;
+  const newImages = [];
 
   images.forEach(image => {
     const existingItem = ledger.items.find(item => item.image_id === image);
@@ -52,6 +53,7 @@ function updateLedger(batchId) {
         added_at: new Date().toISOString()
       });
       newCount++;
+      newImages.push(image);
     }
   });
 
@@ -59,17 +61,29 @@ function updateLedger(batchId) {
   
   if (newCount > 0) {
     console.log(`Batch [${batchId}]: Added ${newCount} new images.`);
-    // specific output format for GitHub Actions to capture if needed
-    console.log(`::set-output name=new_images_${batchId}::${newCount}`); 
   } else {
     console.log(`Batch [${batchId}]: No new images.`);
   }
+
+  return { batchId, newCount, total: ledger.items.length, newImages };
 }
 
 const batchIds = getBatchIds();
+const summaries = [];
+
 if (batchIds.length === 0) {
   console.log("No batches found in images/inbox.");
 } else {
   console.log(`Found batches: ${batchIds.join(', ')}`);
-  batchIds.forEach(updateLedger);
+  batchIds.forEach(batchId => {
+    const summary = updateLedger(batchId);
+    if (summary && summary.newCount > 0) {
+      summaries.push(summary);
+    }
+  });
 }
+
+// Write summary for Slack notification (used by GitHub Actions)
+const summaryPath = path.join(__dirname, '../.ingestion-summary.json');
+const repo = process.env.GITHUB_REPOSITORY || 'Nj-E/Workflow-example';
+fs.writeFileSync(summaryPath, JSON.stringify({ repo, batches: summaries }, null, 2));
