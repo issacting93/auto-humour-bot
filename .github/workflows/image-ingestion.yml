@@ -1,0 +1,39 @@
+name: Image Ingestion
+
+on:
+  push:
+    paths:
+      - 'images/inbox/**'
+
+jobs:
+  update-ledger:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Run Ledger Update
+        run: node scripts/update-ledger.js
+
+      - name: Commit and Push Ledger Updates
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add batches/*.json
+          git commit -m "chore: update batch ledgers [skip ci]" || echo "No changes to commit"
+          git push
+
+      # Placeholder for Slack Notification
+      # You would typically use a custom action or curl request here
+      # - name: Notify Slack
+      #   if: success()
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #   run: |
+      #     curl -X POST -H 'Content-type: application/json' --data '{"text":"New images ingested and ledgers updated!"}' $SLACK_WEBHOOK_URL

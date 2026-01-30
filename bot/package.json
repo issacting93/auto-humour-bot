@@ -1,0 +1,15 @@
+{
+  "name": "auto-humour-bot",
+  "version": "1.0.0",
+  "description": "Slack bot for meme automation",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@slack/bolt": "^3.12.2",
+    "dotenv": "^16.0.3",
+    "octokit": "^3.1.0"
+  }
+}
