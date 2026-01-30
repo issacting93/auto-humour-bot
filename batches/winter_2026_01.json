@@ -2,5 +2,12 @@
   "batch_id": "winter_2026_01",
   "created_at": "2026-01-30T00:00:00.000Z",
   "context_tags": [],
-  "items": []
+  "items": [
+    {
+      "image_id": "ifi6s6ttfzaptm3fleqn.jpg",
+      "file_path": "images/inbox/winter_2026_01/ifi6s6ttfzaptm3fleqn.jpg",
+      "status": "new",
+      "added_at": "2026-01-30T15:35:14.792Z"
+    }
+  ]
 }
