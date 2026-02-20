@@ -1,49 +1,25 @@
 {
   "batch_id": "winter_2026_01",
-  "created_at": "2026-01-30T00:00:00.000Z",
+  "created_at": "2026-02-20T03:24:59.913Z",
   "context_tags": [],
   "items": [
     {
-      "image_id": "ifi6s6ttfzaptm3fleqn.jpg",
-      "file_path": "images/inbox/winter_2026_01/ifi6s6ttfzaptm3fleqn.jpg",
-      "status": "new",
-      "added_at": "2026-01-30T15:35:14.792Z"
-    },
-    {
-      "image_id": "istockphoto-460682111-612x612.jpg",
-      "file_path": "images/inbox/winter_2026_01/istockphoto-460682111-612x612.jpg",
-      "status": "new",
-      "added_at": "2026-01-30T16:03:20.045Z"
-    },
-    {
-      "image_id": "merry-christmas-happy-new-year-greeting-card-copy-space-snowman-standing-winter-landscape-snow-82233888.jpg.webp",
-      "file_path": "images/inbox/winter_2026_01/merry-christmas-happy-new-year-greeting-card-copy-space-snowman-standing-winter-landscape-snow-82233888.jpg.webp",
-      "status": "new",
-      "added_at": "2026-01-30T16:03:20.045Z"
-    },
-    {
       "image_id": "image02.jpg",
       "file_path": "images/inbox/winter_2026_01/image02.jpg",
-<<<<<<< HEAD
       "status": "new",
-      "added_at": "2026-02-20T02:03:21.596Z"
-=======
-      "status": "used",
-      "added_at": "2026-02-20T02:43:49.794Z",
-      "used_at": "2026-02-20T02:49:54.026Z",
-      "used_in": "http://verified-production-test.com",
-      "used_by": "webhook"
->>>>>>> b13bdf72408ff7f5e16d42be699ee91207477064
+      "added_at": "2026-02-20T03:24:59.914Z"
     },
     {
       "image_id": "image03.jpg",
       "file_path": "images/inbox/winter_2026_01/image03.jpg",
       "status": "new",
-<<<<<<< HEAD
-      "added_at": "2026-02-20T02:03:21.596Z"
-=======
-      "added_at": "2026-02-20T02:43:49.794Z"
->>>>>>> b13bdf72408ff7f5e16d42be699ee91207477064
+      "added_at": "2026-02-20T03:24:59.914Z"
+    },
+    {
+      "image_id": "merry-christmas-happy-new-year-greeting-card-copy-space-snowman-standing-winter-landscape-snow-82233888.jpg.webp",
+      "file_path": "images/inbox/winter_2026_01/merry-christmas-happy-new-year-greeting-card-copy-space-snowman-standing-winter-landscape-snow-82233888.jpg.webp",
+      "status": "new",
+      "added_at": "2026-02-20T03:24:59.914Z"
     }
   ]
 }
