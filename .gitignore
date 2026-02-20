@@ -22,3 +22,4 @@ Thumbs.db
 
 # CI (written by update-ledger.js for Slack notification)
 .ingestion-summary.json
+.vercel

@@ -1,12 +1,8 @@
-Here’s the full “what we want to do” plan, written as a detailed system + workflow spec.
-
----
-
 # Goal
 
 Build an automated meme-caption workflow where:
 
-* Person A uploads batches of uncaptained images
+* Person A uploads batches of uncaptioned images
 * The team generates multiple “humour flavour” captions per image
 * Person B curates, discards bad outputs, and sends finalists to a voting prototype
 * The system tracks which images are used, what’s remaining, and when more images are needed
@@ -290,9 +286,3 @@ Nice-to-have:
 * GitHub records everything: what was added, what was used, and when
 
 ---
-
-If you want, I can turn this into:
-
-* a one-page **PRD style workflow doc**
-* the exact **JSON schema** for the batch ledger + generated captions
-* and the concrete **GitHub Actions + Slack bot implementation plan** (step-by-step).
