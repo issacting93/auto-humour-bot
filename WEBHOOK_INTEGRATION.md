@@ -26,10 +26,25 @@ Endpoints marked **Auth: required** use Bearer token authentication.
 ### Setting Up the Secret
 
 1. Generate a secret: `openssl rand -hex 32`
-2. **Vercel**: Settings > Environment Variables > add `WEBHOOK_SECRET`
+2. **Vercel (Production)**: Go to **Settings** → **Environment Variables** and add `WEBHOOK_SECRET` (✅ Already configured).
 3. **Local**: Add `WEBHOOK_SECRET=your_secret` to `bot/.env`
 
+### Optional: Slack Notifications
+
+To receive Slack alerts when files are uploaded via webhook:
+
+1.  **Vercel**: Add `SLACK_WEBHOOK_URL` (Incoming Webhook URL from Slack App) (✅ Already configured).
+2.  **Local**: Add `SLACK_WEBHOOK_URL=...` to `bot/.env`.
+
+If not set, uploads will verify but fail to send the notification (silently logged).
+
 If `WEBHOOK_SECRET` is not set in the environment, **all authenticated endpoints will reject every request** (fail-closed).
+
+---
+
+## Input Validation
+
+All `batchId`, `imageId`, and `filename` parameters are validated against the pattern `[a-zA-Z0-9_\-\.]+`. Requests containing path traversal sequences (`..`) or slashes are rejected with `400 Bad Request`.
 
 ---
 
@@ -88,7 +103,7 @@ The response message includes stock alerts when applicable:
 - **<= 20% remaining:** `Batch winter_2026_01 is running low!`
 - **0 remaining:** `Batch winter_2026_01 is exhausted — need more images!`
 
-**`400 Bad Request`** — Missing required fields or unknown `action` value.
+**`400 Bad Request`** — Missing required fields, invalid IDs, or unknown `action` value.
 
 ```json
 { "error": "Missing required fields: batchId, imageId, action" }
@@ -100,23 +115,27 @@ The response message includes stock alerts when applicable:
 { "error": "Unauthorized" }
 ```
 
-**`404 Not Found`** — Batch does not exist, image not found in batch, or image already marked as used.
+**`404 Not Found`** — Batch does not exist or image not found in batch.
+
+```json
+{ "success": false, "error": "Batch `winter_2026_01` not found." }
+```
+
+**`409 Conflict`** — Image is already marked as used.
 
 ```json
 { "success": false, "error": "Image `image01.jpg` is already marked as used." }
 ```
 
-> **Note:** The "already used" case currently returns 404 rather than 409 Conflict.
-
 **`500 Internal Server Error`** — GitHub API failure or unexpected error.
 
 ```json
-{ "error": "Internal Server Error", "details": "..." }
+{ "error": "Internal Server Error" }
 ```
 
 #### Concurrency
 
-The ledger update uses GitHub's SHA-based optimistic locking. If two requests try to update the same batch simultaneously, one will fail with a 500 due to a SHA mismatch. Retry on failure.
+The ledger update uses GitHub's SHA-based optimistic locking. If two requests try to update the same batch simultaneously, the bot retries once automatically. If the retry also fails, a 500 is returned. Callers should retry on 500.
 
 ---
 
@@ -152,6 +171,12 @@ GET https://auto-humour-bot.vercel.app/webhook/status/winter_2026_01
 | `status`     | `healthy`, `low` (<= 20% remaining), or `empty`  |
 | `updated_at` | Current server timestamp (not batch last-modified) |
 
+**`400 Bad Request`** — Invalid `batchId`.
+
+```json
+{ "error": "Invalid batchId" }
+```
+
 **`404 Not Found`** — Batch does not exist.
 
 ```json
@@ -161,7 +186,7 @@ GET https://auto-humour-bot.vercel.app/webhook/status/winter_2026_01
 **`500 Internal Server Error`** — GitHub API failure.
 
 ```json
-{ "error": "..." }
+{ "error": "Internal Server Error" }
 ```
 
 ---
@@ -169,9 +194,11 @@ GET https://auto-humour-bot.vercel.app/webhook/status/winter_2026_01
 ### `POST /webhook/upload`
 
 Upload an image to a batch inbox via base64-encoded payload.
+**If configured, this also sends a notification to Slack.**
 
 **Auth:** Required
 **Body size limit:** 50 MB
+**Allowed file types:** `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
 
 #### Headers
 
@@ -208,16 +235,16 @@ curl -X POST https://auto-humour-bot.vercel.app/webhook/upload \
 ```json
 {
   "success": true,
-  "message": "File uploaded to images/inbox/summer_2026/meme_001.jpg. Ingestion workflow triggered."
+  "message": "File uploaded to images/inbox/summer_2026/meme_001.jpg. Slack notification sent."
 }
 ```
 
-> **Note:** The file is committed to GitHub. Whether an ingestion workflow actually runs depends on GitHub Actions configuration in the repo.
+> **Note:** The file is committed to GitHub. Whether an ingestion workflow runs depends on GitHub Actions configuration in the repo.
 
-**`400 Bad Request`** — Missing required fields.
+**`400 Bad Request`** — Missing required fields, invalid IDs, or unsupported file type.
 
 ```json
-{ "error": "Missing batchId, filename, or image (base64)" }
+{ "error": "Invalid file type. Allowed: jpg, jpeg, png, gif, webp" }
 ```
 
 **`401 Unauthorized`**
@@ -226,10 +253,16 @@ curl -X POST https://auto-humour-bot.vercel.app/webhook/upload \
 { "error": "Unauthorized" }
 ```
 
+**`409 Conflict`** — File already exists in that batch.
+
+```json
+{ "error": "File meme_001.jpg already exists in batch summer_2026" }
+```
+
 **`500 Internal Server Error`**
 
 ```json
-{ "error": "..." }
+{ "error": "Internal Server Error" }
 ```
 
 ---
@@ -278,6 +311,6 @@ There is no webhook endpoint for deleting folders. This is intentional — delet
 
 ## Operational Notes
 
-- **Logging:** Request bodies for `/webhook/ledger` are logged to stdout. Avoid sending sensitive data in optional fields.
 - **Auth comparison:** Token comparison uses simple string equality, not constant-time comparison. Acceptable for this threat model but not suitable for high-security contexts.
 - **No rate limiting:** Endpoints have no built-in rate limiting. If exposed publicly, consider adding rate limiting at the Vercel or reverse-proxy layer.
+- **Error messages:** 500 responses return `"Internal Server Error"` without implementation details. Check Vercel function logs for root cause.

@@ -1,5 +1,28 @@
 const { App, ExpressReceiver } = require('@slack/bolt');
 const { Octokit } = require('octokit');
+const bodyParser = require('body-parser');
+
+// Helper: Post to Slack
+async function postToSlack(text) {
+    const url = process.env.SLACK_WEBHOOK_URL;
+    if (!url) {
+        console.log('[slack] SLACK_WEBHOOK_URL not set, skipping notification');
+        return;
+    }
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        if (!response.ok) {
+            console.error(`[slack] Failed to post: ${response.status} ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('[slack] Error posting to Slack:', error);
+    }
+}
 require('dotenv').config();
 
 const receiver = new ExpressReceiver({
@@ -17,56 +40,55 @@ const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const REPO_OWNER = process.env.REPO_OWNER;
 const REPO_NAME = process.env.REPO_NAME;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+const DEFAULT_BRANCH = process.env.DEFAULT_BRANCH || 'main';
+
+const ALLOWED_IMAGE_EXT = /\.(jpg|jpeg|png|gif|webp)$/i;
+const VALID_ID = /^[a-zA-Z0-9_\-\.]+$/;
+
+function isValidId(str) {
+    return typeof str === 'string' && str.length > 0 && VALID_ID.test(str) && !str.includes('..');
+}
 
 // Helper: Fetch Ledger
 async function getBatchLedger(batchId) {
     const path = `batches/${batchId}.json`;
-    for (const ref of ['main', undefined, 'master']) {
-        try {
-            console.log(`[meme] Fetching ledger from ${REPO_OWNER}/${REPO_NAME} ${path}${ref ? ` (ref: ${ref})` : ' (default branch)'}`);
-            const params = { owner: REPO_OWNER, repo: REPO_NAME, path };
-            if (ref) params.ref = ref;
-            const { data } = await octokit.rest.repos.getContent(params);
-
-            // GitHub API returns content in base64
-            const content = Buffer.from(data.content, 'base64').toString('utf-8');
-            return { data: JSON.parse(content), sha: data.sha };
-        } catch (error) {
-            if (error.status === 404) continue;
-            console.error(`[meme] Error fetching ledger for ${batchId} from ${REPO_OWNER}/${REPO_NAME}:`, error.message, error.status);
-            return null;
-        }
+    try {
+        const { data } = await octokit.rest.repos.getContent({
+            owner: REPO_OWNER, repo: REPO_NAME, path, ref: DEFAULT_BRANCH
+        });
+        const content = Buffer.from(data.content, 'base64').toString('utf-8');
+        return { data: JSON.parse(content), sha: data.sha };
+    } catch (error) {
+        if (error.status === 404) return null;
+        console.error(`[meme] Error fetching ledger for ${batchId}:`, error.message);
+        return null;
     }
-    console.error(`[meme] Ledger ${batchId} not found on main, default branch, or master`);
-    return null;
 }
 
-// Helper: Mark Image as Used
-async function markImageAsUsed(batchId, imageId, link, user) {
+// Helper: Mark Image as Used (with retry on SHA conflict)
+async function markImageAsUsed(batchId, imageId, link, user, retries = 1) {
     const ledgerInfo = await getBatchLedger(batchId);
     if (!ledgerInfo) {
-        return { success: false, message: `Batch \`${batchId}\` not found.` };
+        return { success: false, reason: 'not_found', message: `Batch \`${batchId}\` not found.` };
     }
 
     const { data: ledger, sha } = ledgerInfo;
     const itemIndex = ledger.items.findIndex(i => i.image_id === imageId);
 
     if (itemIndex === -1) {
-        return { success: false, message: `Image \`${imageId}\` not found in batch \`${batchId}\`.` };
+        return { success: false, reason: 'not_found', message: `Image \`${imageId}\` not found in batch \`${batchId}\`.` };
     }
 
     if (ledger.items[itemIndex].status === 'used') {
-        return { success: false, message: `Image \`${imageId}\` is already marked as used.` };
+        return { success: false, reason: 'already_used', message: `Image \`${imageId}\` is already marked as used.` };
     }
 
-    // Update Request
     ledger.items[itemIndex].status = 'used';
     ledger.items[itemIndex].used_at = new Date().toISOString();
     ledger.items[itemIndex].used_in = link;
     ledger.items[itemIndex].used_by = user;
 
     try {
-        // Commit back to GitHub
         const newContent = Buffer.from(JSON.stringify(ledger, null, 2)).toString('base64');
 
         await octokit.rest.repos.createOrUpdateFileContents({
@@ -92,19 +114,24 @@ async function markImageAsUsed(batchId, imageId, link, user) {
         return { success: true, message };
 
     } catch (error) {
-        console.error('Error updating GitHub:', error);
-        return { success: false, message: `❌ Failed to update GitHub ledger: ${error.message}` };
+        if (error.status === 409 && retries > 0) {
+            console.warn(`[meme] SHA conflict for ${batchId}, retrying...`);
+            return markImageAsUsed(batchId, imageId, link, user, retries - 1);
+        }
+        console.error('[meme] Error updating GitHub:', error.message);
+        return { success: false, reason: 'github_error', message: `❌ Failed to update GitHub ledger: ${error.message}` };
     }
 }
 
-const bodyParser = require('body-parser');
-
-// 1. Status Endpoint (GET)
+// 1. Status Endpoint (GET) — unauthenticated
 receiver.app.get('/webhook/status/:batchId', async (req, res) => {
     try {
         const { batchId } = req.params;
-        const ledgerInfo = await getBatchLedger(batchId);
+        if (!isValidId(batchId)) {
+            return res.status(400).json({ error: 'Invalid batchId' });
+        }
 
+        const ledgerInfo = await getBatchLedger(batchId);
         if (!ledgerInfo) {
             return res.status(404).json({ error: `Batch ${batchId} not found` });
         }
@@ -127,15 +154,14 @@ receiver.app.get('/webhook/status/:batchId', async (req, res) => {
             updated_at: new Date().toISOString()
         });
     } catch (error) {
-        console.error('[webhook] Status error:', error);
-        return res.status(500).json({ error: error.message });
+        console.error('[webhook] Status error:', error.message);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
 // 2. Upload Endpoint (POST)
 receiver.app.post('/webhook/upload', bodyParser.json({ limit: '50mb' }), async (req, res) => {
     try {
-        // Validate Secret
         const authHeader = req.headers.authorization;
         if (!WEBHOOK_SECRET || authHeader !== `Bearer ${WEBHOOK_SECRET}`) {
             return res.status(401).json({ error: 'Unauthorized' });
@@ -146,44 +172,87 @@ receiver.app.post('/webhook/upload', bodyParser.json({ limit: '50mb' }), async (
             return res.status(400).json({ error: 'Missing batchId, filename, or image (base64)' });
         }
 
+        // Validate basic ID format
+        if (!isValidId(batchId) || !isValidId(filename)) {
+            return res.status(400).json({ error: 'Invalid batchId or filename. Use alphanumeric characters, hyphens, underscores, and dots only.' });
+        }
+
+        // Validate extension
+        if (!ALLOWED_IMAGE_EXT.test(filename)) {
+            return res.status(400).json({ error: 'Invalid file type. Allowed: jpg, jpeg, png, gif, webp' });
+        }
+
         console.log(`[webhook] Uploading ${filename} to ${batchId}`);
 
-        // Remove data:image/...;base64, prefix if present
         const base64Content = image.replace(/^data:image\/\w+;base64,/, "");
-        const path = `images/inbox/${batchId}/${filename}`;
+        const filePath = `images/inbox/${batchId}/${filename}`;
 
-        // Create file on GitHub
-        await octokit.rest.repos.createOrUpdateFileContents({
-            owner: REPO_OWNER,
-            repo: REPO_NAME,
-            path: path,
-            message: `Upload ${filename} to ${batchId} via webhook`,
-            content: base64Content
-        });
+        try {
+            await octokit.rest.repos.createOrUpdateFileContents({
+                owner: REPO_OWNER,
+                repo: REPO_NAME,
+                path: filePath,
+                message: `Upload ${filename} to ${batchId} via webhook`,
+                content: base64Content
+            });
+        } catch (ghError) {
+            if (ghError.status === 422) {
+                return res.status(409).json({ error: `File ${filename} already exists in batch ${batchId}` });
+            }
+            throw ghError;
+        }
+
+        // Slack Notification
+        // Fetch current ledger to estimate stats (current + 1 for the new upload)
+        const ledgerInfo = await getBatchLedger(batchId);
+        let total = 1;
+        let used = 0;
+
+        if (ledgerInfo) {
+            const { data: ledger } = ledgerInfo;
+            total = ledger.items.length + 1; // Existing + this new one
+            used = ledger.items.filter(i => i.status === 'used').length;
+        }
+
+        const remaining = total - used;
+
+        let stockNote = 'healthy';
+        if (remaining === 0) stockNote = 'empty';
+        else if (remaining / total <= 0.2) stockNote = 'low';
+
+        const inboxUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/tree/${DEFAULT_BRANCH}/images/inbox/${batchId}`;
+
+        let text = `🆕 Image uploaded via webhook\n` +
+            `• Batch: *${batchId}*\n` +
+            `• File: \`${filename}\`\n` +
+            `• Remaining: *${remaining}/${total}* (${stockNote})\n` +
+            `• Inbox: ${inboxUrl}`;
+
+        if (stockNote === 'low') text += `\n⚠️ Batch *${batchId}* is running low.`;
+        if (stockNote === 'empty') text += `\n🚨 Batch *${batchId}* is exhausted — need more images!`;
+
+        await postToSlack(text);
 
         return res.json({
             success: true,
-            message: `File uploaded to ${path}. Ingestion workflow triggered.`
+            message: `File uploaded to ${filePath}. Slack notification sent.`
         });
 
     } catch (error) {
-        console.error('[webhook] Upload error:', error);
-        return res.status(500).json({ error: error.message });
+        console.error('[webhook] Upload error:', error.message);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-// Webhook Endpoint - Attach directly to Express app with specific body parser
+// 3. Ledger Endpoint (POST)
 receiver.app.post('/webhook/ledger', bodyParser.json(), async (req, res) => {
     try {
-        // 1. Validate Secret
         const authHeader = req.headers.authorization;
         if (!WEBHOOK_SECRET || authHeader !== `Bearer ${WEBHOOK_SECRET}`) {
             console.warn('[webhook] Unauthorized attempt');
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        // 2. Parse Body
-        console.log('[webhook] Body:', req.body);
         if (!req.body) {
             return res.status(400).json({ error: 'No body provided' });
         }
@@ -194,30 +263,37 @@ receiver.app.post('/webhook/ledger', bodyParser.json(), async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields: batchId, imageId, action' });
         }
 
+        if (!isValidId(batchId) || !isValidId(imageId)) {
+            return res.status(400).json({ error: 'Invalid batchId or imageId. Use alphanumeric characters, hyphens, underscores, and dots only.' });
+        }
+
         if (action === 'mark_used') {
-            console.log(`[webhook] Request to mark ${imageId} used in ${batchId}`);
+            console.log(`[webhook] mark_used ${imageId} in ${batchId}`);
             const result = await markImageAsUsed(batchId, imageId, link || 'N/A', user || 'webhook');
 
             if (result.success) {
                 return res.json({ success: true, message: result.message });
-            } else {
+            } else if (result.reason === 'already_used') {
+                return res.status(409).json({ success: false, error: result.message });
+            } else if (result.reason === 'not_found') {
                 return res.status(404).json({ success: false, error: result.message });
+            } else {
+                return res.status(500).json({ success: false, error: result.message });
             }
         }
 
         return res.status(400).json({ error: 'Unknown action' });
     } catch (error) {
-        console.error('[webhook] Error processing request:', error);
-        return res.status(500).json({ error: 'Internal Server Error', details: error.message });
+        console.error('[webhook] Error processing request:', error.message);
+        return res.status(500).json({ error: 'Internal Server Error' });
     }
 });
 
-// Command: /meme status <batch_id>
+// Command: /meme status <batch_id> | used <batch_id> <image_id> [link]
 app.command('/meme', async ({ command, ack, say, respond }) => {
     console.log('[meme] Command received:', command.text || '(no text)');
     await ack();
 
-    // Use respond() so the bot works even when not in the channel (ephemeral reply to user)
     const reply = respond ? (msg) => respond(msg) : say;
 
     const args = (command.text || '').trim().split(/\s+/).filter(Boolean);
@@ -242,7 +318,7 @@ app.command('/meme', async ({ command, ack, say, respond }) => {
             const used = ledger.items.filter(i => i.status === 'used').length;
             const remaining = total - used;
 
-            const baseUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/main`;
+            const baseUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/blob/${DEFAULT_BRANCH}`;
             const imageLines = ledger.items
                 .map(i => `• <${baseUrl}/${i.file_path}|${i.image_id}> (${i.status})`)
                 .join('\n');
@@ -257,7 +333,6 @@ app.command('/meme', async ({ command, ack, say, respond }) => {
         }
 
         else if (subCommand === 'used') {
-            // Usage: /meme used <batch_id> <image_id> [link]
             const imageId = args[2];
             const link = args[3] || 'N/A';
 
