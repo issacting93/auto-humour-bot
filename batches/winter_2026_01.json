@@ -24,8 +24,11 @@
     {
       "image_id": "image02.jpg",
       "file_path": "images/inbox/winter_2026_01/image02.jpg",
-      "status": "new",
-      "added_at": "2026-02-20T02:43:49.794Z"
+      "status": "used",
+      "added_at": "2026-02-20T02:43:49.794Z",
+      "used_at": "2026-02-20T02:49:54.026Z",
+      "used_in": "http://verified-production-test.com",
+      "used_by": "webhook"
     },
     {
       "image_id": "image03.jpg",
