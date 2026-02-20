@@ -24,14 +24,26 @@
     {
       "image_id": "image02.jpg",
       "file_path": "images/inbox/winter_2026_01/image02.jpg",
+<<<<<<< HEAD
       "status": "new",
       "added_at": "2026-02-20T02:03:21.596Z"
+=======
+      "status": "used",
+      "added_at": "2026-02-20T02:43:49.794Z",
+      "used_at": "2026-02-20T02:49:54.026Z",
+      "used_in": "http://verified-production-test.com",
+      "used_by": "webhook"
+>>>>>>> b13bdf72408ff7f5e16d42be699ee91207477064
     },
     {
       "image_id": "image03.jpg",
       "file_path": "images/inbox/winter_2026_01/image03.jpg",
       "status": "new",
+<<<<<<< HEAD
       "added_at": "2026-02-20T02:03:21.596Z"
+=======
+      "added_at": "2026-02-20T02:43:49.794Z"
+>>>>>>> b13bdf72408ff7f5e16d42be699ee91207477064
     }
   ]
 }
